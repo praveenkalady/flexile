@@ -43,7 +43,7 @@ const formSchema = z.object({
   vestingCommencementDate: z.instanceof(CalendarDate, { message: "This field is required." }),
   totalVestingDurationMonths: z.number().nullish(),
   cliffDurationMonths: z.number().nullish(),
-  vestingFrequencyMonths: z.string().nullish(),
+  vestingFrequencyMonths: z.number().nullish(),
   voluntaryTerminationExerciseMonths: z.number().min(0),
   involuntaryTerminationExerciseMonths: z.number().min(0),
   terminationWithCauseExerciseMonths: z.number().min(0),
@@ -113,16 +113,16 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
         retirementExerciseMonths: 120,
       });
     }
-  }, [open, data, form]);
+  }, [open, data]);
 
   const recipientId = form.watch("companyWorkerId");
   const optionPoolId = form.watch("optionPoolId");
   const optionPool = data?.optionPools.find((pool) => pool.id === optionPoolId);
-  const recipient = data?.workers.find(({ id }) => id === recipientId);
 
   useEffect(() => {
     if (!recipientId || !data) return;
 
+    const recipient = data.workers.find(({ id }) => id === recipientId);
     if (recipient?.salaried) {
       form.setValue("optionGrantType", "iso");
       form.setValue("issueDateRelationship", "employee");
@@ -131,9 +131,12 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
       form.setValue("optionGrantType", lastGrant?.optionGrantType ?? "nso");
       form.setValue("issueDateRelationship", lastGrant?.issueDateRelationship ?? "employee");
     }
-  }, [recipientId, data, form, recipient]);
+  }, [recipientId, data]);
 
   useEffect(() => {
+    if (!optionPoolId || !data) return;
+
+    const optionPool = data.optionPools.find((pool) => pool.id === optionPoolId);
     if (!optionPool) return;
 
     form.setValue("optionExpiryMonths", optionPool.defaultOptionExpiryMonths);
@@ -143,7 +146,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
     form.setValue("deathExerciseMonths", optionPool.deathExerciseMonths);
     form.setValue("disabilityExerciseMonths", optionPool.disabilityExerciseMonths);
     form.setValue("retirementExerciseMonths", optionPool.retirementExerciseMonths);
-  }, [optionPoolId, optionPool, form]);
+  }, [optionPoolId, data]);
 
   const createEquityGrant = trpc.equityGrants.create.useMutation({
     onSuccess: async () => {
@@ -193,7 +196,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
           return form.setError("cliffDurationMonths", { message: "Must be less than total vesting duration." });
         if (!values.vestingFrequencyMonths)
           return form.setError("vestingFrequencyMonths", { message: "Must be present." });
-        if (Number(values.vestingFrequencyMonths) > values.totalVestingDurationMonths)
+        if (values.vestingFrequencyMonths > values.totalVestingDurationMonths)
           return form.setError("vestingFrequencyMonths", { message: "Must be less than total vesting duration." });
       }
     }
@@ -501,9 +504,9 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
                                 <ComboBox
                                   {...field}
                                   options={[
-                                    { label: "Monthly", value: "1" },
-                                    { label: "Quarterly", value: "3" },
-                                    { label: "Annually", value: "12" },
+                                    { label: "Monthly", value: 1 },
+                                    { label: "Quarterly", value: 3 },
+                                    { label: "Annually", value: 12 },
                                   ]}
                                   placeholder="Select vesting frequency"
                                 />
