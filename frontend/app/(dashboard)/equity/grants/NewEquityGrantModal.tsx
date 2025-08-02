@@ -43,7 +43,7 @@ const formSchema = z.object({
   vestingCommencementDate: z.instanceof(CalendarDate, { message: "This field is required." }),
   totalVestingDurationMonths: z.number().nullish(),
   cliffDurationMonths: z.number().nullish(),
-  vestingFrequencyMonths: z.number().nullish(),
+  vestingFrequencyMonths: z.string().nullish(),
   voluntaryTerminationExerciseMonths: z.number().min(0),
   involuntaryTerminationExerciseMonths: z.number().min(0),
   terminationWithCauseExerciseMonths: z.number().min(0),
@@ -196,7 +196,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
           return form.setError("cliffDurationMonths", { message: "Must be less than total vesting duration." });
         if (!values.vestingFrequencyMonths)
           return form.setError("vestingFrequencyMonths", { message: "Must be present." });
-        if (values.vestingFrequencyMonths > values.totalVestingDurationMonths)
+        if (Number(values.vestingFrequencyMonths) > values.totalVestingDurationMonths)
           return form.setError("vestingFrequencyMonths", { message: "Must be less than total vesting duration." });
       }
     }
@@ -206,7 +206,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
       ...values,
       totalVestingDurationMonths: values.totalVestingDurationMonths ?? null,
       cliffDurationMonths: values.cliffDurationMonths ?? null,
-      vestingFrequencyMonths: values.vestingFrequencyMonths ?? null,
+      vestingFrequencyMonths: String(values.vestingFrequencyMonths),
       vestingCommencementDate: values.vestingCommencementDate.toString(),
       vestingScheduleId: values.vestingScheduleId ?? null,
       boardApprovalDate: values.boardApprovalDate.toString(),
@@ -504,9 +504,9 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
                                 <ComboBox
                                   {...field}
                                   options={[
-                                    { label: "Monthly", value: 1 },
-                                    { label: "Quarterly", value: 3 },
-                                    { label: "Annually", value: 12 },
+                                    { label: "Monthly", value: "1" },
+                                    { label: "Quarterly", value: "3" },
+                                    { label: "Annually", value: "12" },
                                   ]}
                                   placeholder="Select vesting frequency"
                                 />
