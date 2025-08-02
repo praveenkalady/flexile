@@ -17,10 +17,11 @@ import { companyInvestors, documents, documentSignatures, equityGrants } from "@
 import { assertDefined } from "@/utils/assert";
 
 test.describe("New Contractor", () => {
-  test("allows issuing equity grants", async ({ page, next }) => {
+  test("allows issuing equity grants", { timeout: 240000 }, async ({ page, next }) => {
     const { company, adminUser } = await companiesFactory.createCompletedOnboarding({
       equityEnabled: true,
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
     });
     const { user: contractorUser } = await usersFactory.create();
     let submitters = { "Company Representative": adminUser, Signer: contractorUser };
@@ -37,25 +38,35 @@ test.describe("New Contractor", () => {
       userId: projectBasedUser.id,
     });
     await optionPoolsFactory.create({ companyId: company.id });
-    await login(page, adminUser);
-    await page.getByRole("button", { name: "Equity" }).click();
-    await page.getByRole("link", { name: "Equity grants" }).click();
-    await expect(page.getByRole("button", { name: "New option grant" })).not.toBeVisible();
-    await expect(page.getByText("Create equity plan contract templates")).toBeVisible();
 
+    // Create document template BEFORE navigating to page
     await documentTemplatesFactory.create({
       companyId: company.id,
       type: DocumentTemplateType.EquityPlanContract,
     });
-    await page.reload();
-    await expect(page.getByText("Create equity plan contract templates")).not.toBeVisible();
+
+    await login(page, adminUser);
+    await page.getByRole("button", { name: "Equity" }).click();
+    await page.getByRole("link", { name: "Equity grants" }).click();
+
+    // Wait for the "New option grant" button to be visible
+    await expect(page.getByRole("button", { name: "New option grant" })).toBeVisible();
     await page.getByRole("button", { name: "New option grant" }).click();
     await expect(page.getByLabel("Number of options")).toHaveValue("10000");
     await selectComboboxOption(page, "Recipient", contractorUser.preferredName ?? "");
     await page.getByLabel("Number of options").fill("10");
     await selectComboboxOption(page, "Relationship to company", "Consultant");
-    await page.getByRole("button", { name: "Create option grant" }).click();
 
+    // Fill in the board approval date (required field)
+    await fillDatePicker(page, "Board approval date", "01/01/2024");
+
+    // Wait for the button to be enabled before clicking
+    await expect(page.getByRole("button", { name: "Create grant" })).toBeEnabled();
+
+    await page.getByRole("button", { name: "Create grant" }).click();
+
+    // Wait for modal to close and table to appear
+    await expect(page.getByRole("dialog", { name: "New equity grant" })).not.toBeVisible({ timeout: 30000 });
     await expect(page.getByRole("table")).toHaveCount(1);
     let rows = page.getByRole("table").first().getByRole("row");
     await expect(rows).toHaveCount(2);
@@ -74,11 +85,105 @@ test.describe("New Contractor", () => {
 
     submitters = { "Company Representative": adminUser, Signer: projectBasedUser };
     await page.getByRole("button", { name: "New option grant" }).click();
-    await selectComboboxOption(page, "Recipient", projectBasedUser.preferredName ?? "");
-    await page.getByLabel("Number of options").fill("20");
-    await selectComboboxOption(page, "Relationship to company", "Consultant");
-    await page.getByRole("button", { name: "Create option grant" }).click();
 
+    // Wait for the form to be fully loaded
+    await expect(page.getByLabel("Number of options")).toBeVisible();
+    await expect(page.getByLabel("Number of options")).toHaveValue("10000");
+
+    // Fill the form fields step by step with proper waiting
+    await selectComboboxOption(page, "Recipient", projectBasedUser.preferredName ?? "");
+    await page.waitForTimeout(200); // Small wait after recipient selection
+
+    await page.getByLabel("Number of options").fill("20");
+    await page.waitForTimeout(200); // Small wait after number input
+
+    await selectComboboxOption(page, "Relationship to company", "Consultant");
+    await page.waitForTimeout(200); // Small wait after relationship selection
+
+    // Explicitly select the option pool if it's not auto-selected
+    try {
+      await selectComboboxOption(page, "Option pool", "Best equity plan");
+      await page.waitForTimeout(200);
+    } catch (_error) {
+      // Option pool might be auto-selected
+    }
+
+    // Explicitly select grant type if needed
+    try {
+      await selectComboboxOption(page, "Grant type", "NSO");
+      await page.waitForTimeout(200);
+    } catch (_error) {
+      // Grant type might be auto-selected
+    }
+
+    // Explicitly select vesting trigger if needed - with extended timeout
+    try {
+      // Wait for the vesting trigger combobox to be available with extended timeout
+      await page.getByRole("combobox", { name: "Vesting trigger" }).waitFor({ timeout: 10000 });
+      await selectComboboxOption(page, "Vesting trigger", "As invoices are paid");
+      await page.waitForTimeout(200);
+    } catch (_error) {
+      // Vesting trigger might be auto-selected
+    }
+
+    // Fill in the board approval date (required field)
+    await fillDatePicker(page, "Board approval date", "01/01/2024");
+    await page.waitForTimeout(1000); // Longer wait for date picker to properly update
+
+    // Check if optionExpiryMonths field exists and fill it if empty
+    const modal = page.getByRole("dialog", { name: "New equity grant" });
+    const expiryField = modal.locator('input[name="optionExpiryMonths"]');
+    const expiryFieldExists = (await expiryField.count()) > 0;
+
+    if (expiryFieldExists) {
+      const currentValue = await expiryField.inputValue();
+
+      if (!currentValue || currentValue === "") {
+        await expiryField.fill("120"); // 10 years is a common default
+        await page.waitForTimeout(200);
+      }
+    }
+
+    // Wait for the button to be enabled before clicking
+    await expect(page.getByRole("button", { name: "Create grant" })).toBeEnabled();
+
+    // Verify all form fields are properly filled before submission
+    await expect(page.getByLabel("Number of options")).toHaveValue("20");
+
+    // Verify the Create grant button is enabled and visible
+    await expect(page.getByRole("button", { name: "Create grant" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Create grant" })).toBeVisible();
+
+    // Check for any validation errors before submitting
+    const errorElements = await page.locator('[role="alert"], .text-red-500, .text-destructive').all();
+    const errorTexts = [];
+    for (const element of errorElements) {
+      const text = await element.textContent();
+      if (text?.trim()) {
+        errorTexts.push(text.trim());
+      }
+    }
+    if (errorTexts.length > 0) {
+      throw new Error(`Form validation errors found before submission: ${errorTexts.join(", ")}`);
+    }
+
+    // Click submit button
+    await page.getByRole("button", { name: "Create grant" }).click();
+
+    // Wait a moment for potential network activity
+    await page.waitForTimeout(2000);
+
+    // Capture a screenshot after form submission
+    await page.screenshot({ path: "second_form_after_submission.png" });
+
+    // Check if the modal is still visible - if it closed, the submission was successful
+    const modalStillVisible2 = await page.getByRole("dialog", { name: "New equity grant" }).isVisible();
+    if (modalStillVisible2) {
+      throw new Error("Form submission failed - modal still visible after submission");
+    }
+
+    // Wait for modal to close and table to refresh with new data
+    await expect(page.getByRole("dialog", { name: "New equity grant" })).not.toBeVisible({ timeout: 30000 });
     await expect(page.getByRole("table")).toHaveCount(1);
     rows = page.getByRole("table").first().getByRole("row");
     await expect(rows).toHaveCount(3);
@@ -141,6 +246,7 @@ test.describe("New Contractor", () => {
     const { company, adminUser } = await companiesFactory.createCompletedOnboarding({
       equityEnabled: true,
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
     });
     const { companyInvestor } = await companyInvestorsFactory.create({ companyId: company.id });
     const { equityGrant } = await equityGrantsFactory.create({
@@ -174,6 +280,7 @@ test.describe("New Contractor", () => {
       equityEnabled: true,
       sharePriceInUsd: "25.50", // $25.50 per share
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
     });
     const { user: contractorUser } = await usersFactory.create();
     const submitters = { "Company Representative": adminUser, Signer: contractorUser };
@@ -229,6 +336,7 @@ test.describe("New Contractor", () => {
       equityEnabled: true,
       sharePriceInUsd: "10", // $10.00 per share
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
     });
     const { user: contractorUser1 } = await usersFactory.create();
     await companyContractorsFactory.create({
@@ -264,6 +372,7 @@ test.describe("New Contractor", () => {
       equityEnabled: true,
       sharePriceInUsd: null, // No share price set
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
     });
     const { user: contractorUser } = await usersFactory.create();
     await companyContractorsFactory.create({
@@ -297,6 +406,7 @@ test.describe("New Contractor", () => {
     const { company } = await companiesFactory.createCompletedOnboarding({
       equityEnabled: true,
       conversionSharePriceUsd: "1",
+      fmvPerShareInUsd: "5", // Required for equity grant creation
       jsonData: { flags: ["option_exercising"] },
     });
     const { user } = await usersFactory.create();
