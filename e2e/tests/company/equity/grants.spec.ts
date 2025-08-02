@@ -40,7 +40,7 @@ test.describe("New Contractor", () => {
     await login(page, adminUser);
     await page.getByRole("button", { name: "Equity" }).click();
     await page.getByRole("link", { name: "Equity grants" }).click();
-    await expect(page.getByRole("link", { name: "New option grant" })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: "New option grant" })).not.toBeVisible();
     await expect(page.getByText("Create equity plan contract templates")).toBeVisible();
 
     await documentTemplatesFactory.create({
@@ -49,7 +49,7 @@ test.describe("New Contractor", () => {
     });
     await page.reload();
     await expect(page.getByText("Create equity plan contract templates")).not.toBeVisible();
-    await page.getByRole("link", { name: "New option grant" }).click();
+    await page.getByRole("button", { name: "New option grant" }).click();
     await expect(page.getByLabel("Number of options")).toHaveValue("10000");
     await selectComboboxOption(page, "Recipient", contractorUser.preferredName ?? "");
     await page.getByLabel("Number of options").fill("10");
@@ -73,7 +73,7 @@ test.describe("New Contractor", () => {
     );
 
     submitters = { "Company Representative": adminUser, Signer: projectBasedUser };
-    await page.getByRole("link", { name: "New option grant" }).click();
+    await page.getByRole("button", { name: "New option grant" }).click();
     await selectComboboxOption(page, "Recipient", projectBasedUser.preferredName ?? "");
     await page.getByLabel("Number of options").fill("20");
     await selectComboboxOption(page, "Relationship to company", "Consultant");
@@ -166,6 +166,131 @@ test.describe("New Contractor", () => {
       (await db.query.equityGrants.findFirst({ where: eq(equityGrants.id, equityGrant.id) }).then(takeOrThrow))
         .cancelledAt,
     ).not.toBeNull();
+  });
+
+  test("displays correct estimated value based on share price in new grant modal", async ({ page, next }) => {
+    // Test with specific share price to verify calculation - copy exact pattern from working test
+    const { company, adminUser } = await companiesFactory.createCompletedOnboarding({
+      equityEnabled: true,
+      sharePriceInUsd: "25.50", // $25.50 per share
+      conversionSharePriceUsd: "1",
+    });
+    const { user: contractorUser } = await usersFactory.create();
+    const submitters = { "Company Representative": adminUser, Signer: contractorUser };
+    const { mockForm } = mockDocuseal(next, { submitters: () => submitters });
+    await mockForm(page);
+    await companyContractorsFactory.create({
+      companyId: company.id,
+      userId: contractorUser.id,
+    });
+    await optionPoolsFactory.create({ companyId: company.id });
+
+    // Create document template BEFORE navigating to page
+    await documentTemplatesFactory.create({
+      companyId: company.id,
+      type: DocumentTemplateType.EquityPlanContract,
+    });
+
+    await login(page, adminUser);
+    await page.getByRole("button", { name: "Equity" }).click();
+    await page.getByRole("link", { name: "Equity grants" }).click();
+
+    // Wait for the "New option grant" button to be visible
+    await expect(page.getByRole("button", { name: "New option grant" })).toBeVisible();
+    await page.getByRole("button", { name: "New option grant" }).click();
+
+    // Verify modal opened and test conversion price calculations
+    await expect(page.getByLabel("Number of options")).toHaveValue("10000");
+    await selectComboboxOption(page, "Recipient", contractorUser.preferredName ?? "");
+
+    // Test default value (10,000 shares)
+    // Expected value: 10,000 * $25.50 = $255,000
+    await expect(page.getByText("Estimated value: $255,000, based on a $25.50 share price.")).toBeVisible();
+
+    // Test custom value (5,000 shares)
+    await page.getByLabel("Number of options").fill("5000");
+    // Expected value: 5,000 * $25.50 = $127,500
+    await expect(page.getByText("Estimated value: $127,500, based on a $25.50 share price.")).toBeVisible();
+
+    // Test another custom value (1,234 shares) - testing decimal precision
+    await page.getByLabel("Number of options").fill("1234");
+    // Expected value: 1,234 * $25.50 = $31,467
+    await expect(page.getByText("Estimated value: $31,467, based on a $25.50 share price.")).toBeVisible();
+
+    // Test edge case with 0 shares
+    await page.getByLabel("Number of options").fill("0");
+    // Should not show estimated value for 0 shares
+    await expect(page.getByText(/Estimated value:/u)).not.toBeVisible();
+  });
+
+  test("handles different share price scenarios in new grant modal", async ({ page }) => {
+    // Test with whole number share price
+    const { company: company1, adminUser: adminUser1 } = await companiesFactory.createCompletedOnboarding({
+      equityEnabled: true,
+      sharePriceInUsd: "10", // $10.00 per share
+      conversionSharePriceUsd: "1",
+    });
+    const { user: contractorUser1 } = await usersFactory.create();
+    await companyContractorsFactory.create({
+      companyId: company1.id,
+      userId: contractorUser1.id,
+    });
+    await optionPoolsFactory.create({ companyId: company1.id });
+
+    // Create document template BEFORE navigation
+    await documentTemplatesFactory.create({
+      companyId: company1.id,
+      type: DocumentTemplateType.EquityPlanContract,
+    });
+
+    await login(page, adminUser1);
+    await page.getByRole("button", { name: "Equity" }).click();
+    await page.getByRole("link", { name: "Equity grants" }).click();
+
+    await expect(page.getByRole("button", { name: "New option grant" })).toBeVisible();
+    await page.getByRole("button", { name: "New option grant" }).click();
+
+    await selectComboboxOption(page, "Recipient", contractorUser1.preferredName ?? "");
+    await page.getByLabel("Number of options").fill("1000");
+    // Expected: 1,000 * $10.00 = $10,000
+    await expect(page.getByText("Estimated value: $10,000, based on a $10.00 share price.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("does not show estimated value when share price is not set", async ({ page }) => {
+    // Test with no share price set
+    const { company, adminUser } = await companiesFactory.createCompletedOnboarding({
+      equityEnabled: true,
+      sharePriceInUsd: null, // No share price set
+      conversionSharePriceUsd: "1",
+    });
+    const { user: contractorUser } = await usersFactory.create();
+    await companyContractorsFactory.create({
+      companyId: company.id,
+      userId: contractorUser.id,
+    });
+    await optionPoolsFactory.create({ companyId: company.id });
+
+    // Create document template BEFORE navigation
+    await documentTemplatesFactory.create({
+      companyId: company.id,
+      type: DocumentTemplateType.EquityPlanContract,
+    });
+
+    await login(page, adminUser);
+    await page.getByRole("button", { name: "Equity" }).click();
+    await page.getByRole("link", { name: "Equity grants" }).click();
+
+    await expect(page.getByRole("button", { name: "New option grant" })).toBeVisible();
+    await page.getByRole("button", { name: "New option grant" }).click();
+
+    await selectComboboxOption(page, "Recipient", contractorUser.preferredName ?? "");
+    await page.getByLabel("Number of options").fill("1000");
+
+    // Should not show estimated value when share price is not set
+    await expect(page.getByText(/Estimated value:/u)).not.toBeVisible();
+    await expect(page.getByText(/based on a .* share price/u)).not.toBeVisible();
   });
 
   test("allows exercising options", async ({ page, next }) => {
