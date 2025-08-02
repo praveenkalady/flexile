@@ -206,7 +206,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
       ...values,
       totalVestingDurationMonths: values.totalVestingDurationMonths ?? null,
       cliffDurationMonths: values.cliffDurationMonths ?? null,
-      vestingFrequencyMonths: String(values.vestingFrequencyMonths),
+      vestingFrequencyMonths: values.vestingFrequencyMonths ?? null,
       vestingCommencementDate: values.vestingCommencementDate.toString(),
       vestingScheduleId: values.vestingScheduleId ?? null,
       boardApprovalDate: values.boardApprovalDate.toString(),
