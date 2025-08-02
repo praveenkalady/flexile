@@ -7,7 +7,7 @@ import { documentTemplatesFactory } from "@test/factories/documentTemplates";
 import { equityGrantsFactory } from "@test/factories/equityGrants";
 import { optionPoolsFactory } from "@test/factories/optionPools";
 import { usersFactory } from "@test/factories/users";
-import { fillDatePicker, selectComboboxOption } from "@test/helpers";
+import { checkForValidationErrors, fillDatePicker, selectComboboxOption } from "@test/helpers";
 import { login } from "@test/helpers/auth";
 import { mockDocuseal } from "@test/helpers/docuseal";
 import { expect, test, withinModal } from "@test/index";
@@ -67,15 +67,8 @@ test.describe("New Contractor", () => {
     // Ensure all required fields are properly filled and validated
     await expect(page.getByLabel("Number of options")).toHaveValue("10");
 
-    // Check for validation errors and handle them
-    const validationErrors = page.locator('[role="alert"], .text-red-500, .text-destructive');
-    const errorCount = await validationErrors.count();
-    for (let i = 0; i < errorCount; i++) {
-      const errorText = await validationErrors.nth(i).textContent();
-      if (errorText?.trim()) {
-        throw new Error(`Form has validation error: ${errorText.trim()}`);
-      }
-    }
+    // Check for validation errors before submitting
+    await checkForValidationErrors(page);
 
     await page.getByRole("button", { name: "Create grant" }).click();
 
@@ -177,17 +170,7 @@ test.describe("New Contractor", () => {
     await expect(page.getByRole("button", { name: "Create grant" })).toBeVisible();
 
     // Check for any validation errors before submitting
-    const errorElements = await page.locator(".mt-2.text-center.text-sm.text-red-600").all();
-    const errorTexts = [];
-    for (const element of errorElements) {
-      const text = await element.textContent();
-      if (text?.trim()) {
-        errorTexts.push(text.trim());
-      }
-    }
-    if (errorTexts.length > 0) {
-      throw new Error(`Form validation errors found before submission: ${errorTexts.join(", ")}`);
-    }
+    await checkForValidationErrors(page);
 
     // Click submit button
     await page.getByRole("button", { name: "Create grant" }).click();

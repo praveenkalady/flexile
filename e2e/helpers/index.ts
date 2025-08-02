@@ -17,3 +17,29 @@ export const selectComboboxOption = async (page: Page, name: string, option: str
 
 export const fillDatePicker = async (page: Page, name: string, value: string) =>
   page.getByRole("spinbutton", { name }).first().pressSequentially(value, { delay: 50 });
+
+export const checkForValidationErrors = async (page: Page) => {
+  // Check for validation errors using multiple common selectors
+  const errorSelectors = [
+    '[role="alert"]',
+    ".text-red-500",
+    ".text-destructive",
+    ".mt-2.text-center.text-sm.text-red-600",
+  ];
+
+  const allErrors = [];
+
+  for (const selector of errorSelectors) {
+    const errorElements = await page.locator(selector).all();
+    for (const element of errorElements) {
+      const text = await element.textContent();
+      if (text?.trim()) {
+        allErrors.push(text.trim());
+      }
+    }
+  }
+
+  if (allErrors.length > 0) {
+    throw new Error(`Form validation errors found: ${allErrors.join(", ")}`);
+  }
+};
