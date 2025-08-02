@@ -663,6 +663,11 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
                 name="docusealTemplateId"
                 render={({ field }) => <TemplateSelector type={DocumentTemplateType.EquityPlanContract} {...field} />}
               />
+              {form.formState.errors.root ? (
+                <div className="mt-2 text-center text-sm text-red-600">
+                  {form.formState.errors.root.message ?? "An error occurred"}
+                </div>
+              ) : null}
               <div className="flex justify-end space-x-3 pt-4">
                 <Button variant="outline" onClick={() => onOpenChange(false)} type="button">
                   Cancel
@@ -671,11 +676,6 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
                   Create grant
                 </MutationStatusButton>
               </div>
-              {form.formState.errors.root ? (
-                <div className="mt-2 text-center text-sm text-red-600">
-                  {form.formState.errors.root.message ?? "An error occurred"}
-                </div>
-              ) : null}
             </form>
           </Form>
         ) : null}
