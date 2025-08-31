@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { PDF_MAX_FILE_SIZE, PDF_MAX_FILE_SIZE_MB } from "@/models/constants";
 
 const parsedInvoiceSchema = z.object({
   invoiceNumber: z.string().optional(),
@@ -46,6 +47,12 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
       const pdfFile = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type === "application/pdf");
       if (!pdfFile) {
         setError("Please drop a PDF file");
+        return;
+      }
+
+      // Check file size on client side
+      if (pdfFile.size > PDF_MAX_FILE_SIZE) {
+        setError(`File size exceeds ${PDF_MAX_FILE_SIZE_MB}MB limit. Please upload a smaller PDF.`);
         return;
       }
 
