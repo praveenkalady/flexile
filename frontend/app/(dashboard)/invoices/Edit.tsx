@@ -159,12 +159,10 @@ const Edit = () => {
         return;
       }
 
-      // Update invoice number
       if (parsedData.invoiceNumber) {
         setInvoiceNumber(parsedData.invoiceNumber);
       }
 
-      // Update invoice date
       if (parsedData.invoiceDate && parsedData.invoiceDate !== "N/A") {
         try {
           // Validate that the date is in YYYY-MM-DD format
@@ -181,10 +179,7 @@ const Edit = () => {
       // Update line items
       if (parsedData.lineItems?.length) {
         const newLineItems = parsedData.lineItems.map((item) => {
-          // Use the user's default setting for hourly vs project-based
-          // If user is hourly by default, treat numeric quantities as hours
           const isHourly = !data.user.project_based;
-
           // Handle quantity conversion
           let quantityValue: string;
           if (item.quantity) {
@@ -245,7 +240,6 @@ const Edit = () => {
         }
       }
 
-      // Update notes
       if (parsedData.notes) {
         setNotes(parsedData.notes);
       }
@@ -387,7 +381,6 @@ const Edit = () => {
           const file = e.target.files?.[0];
           if (file) {
             handleFileSelect(file);
-            // Reset input value so the same file can be selected again
             e.target.value = "";
           }
         }}

@@ -15,7 +15,6 @@ export function PdfDropOverlay({ isDragging, isParsing }: PdfDropOverlayProps) {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
-      {/* Background overlay */}
       <div
         className={cn(
           "absolute inset-0 transition-colors duration-200",
@@ -23,8 +22,6 @@ export function PdfDropOverlay({ isDragging, isParsing }: PdfDropOverlayProps) {
           isParsing && "bg-black/90",
         )}
       />
-
-      {/* Content */}
       <div className="relative flex h-full items-center justify-center p-8">
         <div className="space-y-6 text-center">
           {isDragging && !isParsing ? (
@@ -40,7 +37,6 @@ export function PdfDropOverlay({ isDragging, isParsing }: PdfDropOverlayProps) {
               </div>
             </>
           ) : null}
-
           {isParsing ? (
             <>
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-white/10">

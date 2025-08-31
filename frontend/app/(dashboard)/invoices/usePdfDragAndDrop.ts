@@ -39,13 +39,11 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
     async (pdfFile: File) => {
       setError(null);
 
-      // Check file type
       if (pdfFile.type !== "application/pdf") {
         setError("Please select a PDF file");
         return;
       }
 
-      // Check file size on client side
       if (pdfFile.size > PDF_MAX_FILE_SIZE) {
         setError(`File size exceeds ${PDF_MAX_FILE_SIZE_MB}MB limit. Please upload a smaller PDF.`);
         return;
