@@ -35,18 +35,13 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
   const [error, setError] = useState<string | null>(null);
   const dragCounter = useRef(0);
 
-  const handleDrop = useCallback(
-    async (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      setIsDragging(false);
-      dragCounter.current = 0;
+  const processPdfFile = useCallback(
+    async (pdfFile: File) => {
       setError(null);
 
-      const pdfFile = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type === "application/pdf");
-      if (!pdfFile) {
-        setError("Please drop a PDF file");
+      // Check file type
+      if (pdfFile.type !== "application/pdf") {
+        setError("Please select a PDF file");
         return;
       }
 
@@ -82,6 +77,32 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
     [onPdfParsed],
   );
 
+  const handleDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      setIsDragging(false);
+      dragCounter.current = 0;
+
+      const pdfFile = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type === "application/pdf");
+      if (!pdfFile) {
+        setError("Please drop a PDF file");
+        return;
+      }
+
+      await processPdfFile(pdfFile);
+    },
+    [processPdfFile],
+  );
+
+  const handleFileSelect = useCallback(
+    async (file: File) => {
+      await processPdfFile(file);
+    },
+    [processPdfFile],
+  );
+
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
     dragCounter.current++;
@@ -109,5 +130,5 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
     };
   }, [handleDragEnter, handleDragLeave, handleDragOver, handleDrop]);
 
-  return { isDragging, isParsing, error, setError };
+  return { isDragging, isParsing, error, setError, handleFileSelect };
 }
