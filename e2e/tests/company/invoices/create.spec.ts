@@ -6,7 +6,7 @@ import { equityGrantsFactory } from "@test/factories/equityGrants";
 import { usersFactory } from "@test/factories/users";
 import { fillDatePicker } from "@test/helpers";
 import { login } from "@test/helpers/auth";
-import { expect, test } from "@test/index";
+import { expect, type Page, test } from "@test/index";
 import { subDays } from "date-fns";
 import { desc, eq } from "drizzle-orm";
 import {
@@ -122,7 +122,7 @@ test.describe("invoice creation", () => {
     await login(page, contractorUser, "/invoices/new");
 
     await page.getByRole("button", { name: "Add expense" }).click();
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[accept="application/pdf, image/*"]').setInputFiles({
       name: "receipt.pdf",
       mimeType: "application/pdf",
       buffer: Buffer.from("test expense receipt"),
@@ -276,5 +276,195 @@ test.describe("invoice creation", () => {
       .then(takeOrThrow);
 
     expect(Number(lineItem.quantity)).toBe(2.5);
+  });
+});
+
+test.describe("invoice PDF import", () => {
+  let company: typeof companies.$inferSelect;
+  let contractorUser: typeof users.$inferSelect;
+  let _companyContractor: typeof companyContractors.$inferSelect;
+
+  async function createDataTransferHandle(page: Page, files: { name: string; type: string; bytes: number[] }[]) {
+    return page.evaluateHandle((files) => {
+      const dt = new DataTransfer();
+      files.forEach(({ name, type, bytes }) => {
+        const file = new File([new Uint8Array(bytes)], name, { type });
+        dt.items.add(file);
+      });
+      return dt;
+    }, files);
+  }
+
+  test.beforeEach(async () => {
+    company = (
+      await companiesFactory.createCompletedOnboarding({
+        equityEnabled: false,
+      })
+    ).company;
+
+    contractorUser = (
+      await usersFactory.createWithBusinessEntity({
+        zipCode: "22222",
+        streetAddress: "1st St.",
+      })
+    ).user;
+
+    _companyContractor = (
+      await companyContractorsFactory.create({
+        companyId: company.id,
+        userId: contractorUser.id,
+        payRateInSubunits: 10000, // $100/hour
+      })
+    ).companyContractor;
+  });
+
+  test("shows Import from PDF button and successfully parses invoice", async ({ page }) => {
+    await login(page, contractorUser, "/invoices/new");
+
+    // Check that Import from PDF button is visible
+    const importButton = page.getByRole("button", { name: "Import from PDF" });
+    await expect(importButton).toBeVisible();
+
+    // Mock the API response
+    await page.route("**/api/invoices/parse-pdf", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          invoiceNumber: "INV-PDF-001",
+          invoiceDate: "2024-03-20",
+          lineItems: [
+            {
+              description: "Development Services",
+              quantity: 10, // 10 hours
+              rate: 100,
+            },
+          ],
+          notes: "March 2024 work",
+        }),
+      });
+    });
+
+    // Simulate PDF drop
+    const dropTarget = page.locator("body");
+    const dataTransfer = await createDataTransferHandle(page, [
+      {
+        name: "invoice.pdf",
+        type: "application/pdf",
+        bytes: Array.from(Buffer.from("Invoice content")),
+      },
+    ]);
+
+    await dropTarget.dispatchEvent("drop", { dataTransfer });
+    await page.waitForTimeout(1000);
+
+    // Verify fields are populated
+    await expect(page.getByLabel("Invoice ID")).toHaveValue("INV-PDF-001");
+    await expect(page.getByPlaceholder("Description").first()).toHaveValue("Development Services");
+    await expect(page.getByLabel("Hours / Qty").first()).toHaveValue("10:00");
+    await expect(page.getByLabel("Rate").first()).toHaveValue("100");
+
+    // Submit the invoice
+    await page.getByRole("button", { name: "Send invoice" }).click();
+    await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
+
+    // Verify in database
+    const invoice = await db.query.invoices
+      .findFirst({ where: eq(invoices.companyId, company.id), orderBy: desc(invoices.id) })
+      .then(takeOrThrow);
+    expect(invoice.invoiceNumber).toBe("INV-PDF-001");
+    expect(invoice.totalAmountInUsdCents).toBe(100000n); // $1000
+  });
+
+  test("validates PDF file type and size", async ({ page }) => {
+    await login(page, contractorUser, "/invoices/new");
+    await page.waitForLoadState("networkidle");
+
+    const dropTarget = page.locator("body");
+
+    // Test non-PDF file
+    const txtTransfer = await createDataTransferHandle(page, [
+      {
+        name: "document.txt",
+        type: "text/plain",
+        bytes: Array.from(Buffer.from("Text file")),
+      },
+    ]);
+
+    await dropTarget.dispatchEvent("drop", { dataTransfer: txtTransfer });
+    await page.waitForTimeout(500);
+
+    // Check for error message
+    const dropError = page.getByText("Please drop a PDF file");
+    const selectError = page.getByText("Please select a PDF file");
+    const dropErrorVisible = await dropError.isVisible().catch(() => false);
+    const selectErrorVisible = await selectError.isVisible().catch(() => false);
+    expect(dropErrorVisible || selectErrorVisible).toBeTruthy();
+
+    // Dismiss error if visible
+    const dismissButton = page.getByRole("button", { name: "Dismiss" });
+    if (await dismissButton.isVisible().catch(() => false)) {
+      await dismissButton.click();
+    }
+
+    // Test oversized PDF (>10MB)
+    const largeTransfer = await createDataTransferHandle(page, [
+      {
+        name: "large.pdf",
+        type: "application/pdf",
+        bytes: Array.from(Buffer.alloc(11 * 1024 * 1024)), // 11MB
+      },
+    ]);
+
+    await dropTarget.dispatchEvent("drop", { dataTransfer: largeTransfer });
+    await expect(page.getByText(/File size exceeds.*10.*MB limit/u)).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss" }).click();
+  });
+
+  test("shows error for non-invoice PDF content", async ({ page }) => {
+    await login(page, contractorUser, "/invoices/new");
+    await page.waitForLoadState("networkidle");
+
+    // Mock API response for non-invoice PDF
+    await page.route("**/api/invoices/parse-pdf", async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "This PDF doesn't appear to contain invoice data. Please upload a valid invoice PDF.",
+        }),
+      });
+    });
+
+    const dropTarget = page.locator("body");
+    const dataTransfer = await createDataTransferHandle(page, [
+      {
+        name: "manual.pdf",
+        type: "application/pdf",
+        bytes: Array.from(Buffer.from("User manual")),
+      },
+    ]);
+
+    await dropTarget.dispatchEvent("drop", { dataTransfer });
+    await page.waitForTimeout(1000);
+
+    // Check for error message
+    const errorAlert = page.locator('[role="alert"]').filter({ hasText: "invoice data" });
+    const errorText = page.getByText(
+      "This PDF doesn't appear to contain invoice data. Please upload a valid invoice PDF.",
+    );
+
+    try {
+      await expect(errorAlert.or(errorText)).toBeVisible({ timeout: 5000 });
+    } catch {
+      const anyError = page.getByText(/invoice data/iu);
+      await expect(anyError).toBeVisible();
+    }
+
+    // Dismiss error if exists
+    const dismissButton = page.getByRole("button", { name: "Dismiss" });
+    if (await dismissButton.isVisible().catch(() => false)) {
+      await dismissButton.click();
+    }
   });
 });
