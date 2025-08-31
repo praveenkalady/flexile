@@ -2,6 +2,7 @@ import { openai } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { PDF_MAX_FILE_SIZE, PDF_MAX_FILE_SIZE_MB } from "@/models/constants";
 
 const invoiceSchema = z.object({
   invoiceNumber: z.string().optional(),
@@ -37,6 +38,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Please provide a valid PDF file" }, { status: 400 });
     }
 
+    // Check file size
+    if (file.size > PDF_MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File size exceeds ${PDF_MAX_FILE_SIZE_MB}MB limit. Please upload a smaller PDF.` },
+        { status: 400 },
+      );
+    }
+
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
     }
@@ -56,18 +65,36 @@ export async function POST(request: NextRequest) {
             - Rates: dollar amounts (e.g., $100.00 → 100)
             - Invoice #: patterns like #1234, INV-1234
             - Dates: YYYY-MM-DD format
-            - Each line item separate in array`,
+            - Each line item separate in array
+            - If the document is not an invoice, return empty fields`,
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Extract invoice data from this PDF:" },
+            {
+              type: "text",
+              text: "Extract invoice data from this PDF. If this is not an invoice, return empty fields:",
+            },
             { type: "image", image: dataUrl },
           ],
         },
       ],
       temperature: 0.1,
     });
+
+    // Check if the result contains any meaningful invoice data
+    const hasData =
+      object.invoiceNumber ||
+      object.invoiceDate ||
+      (object.lineItems && object.lineItems.length > 0) ||
+      (object.expenses && object.expenses.length > 0);
+
+    if (!hasData) {
+      return NextResponse.json(
+        { error: "This PDF doesn't appear to contain invoice data. Please upload a valid invoice PDF." },
+        { status: 400 },
+      );
+    }
 
     return NextResponse.json(object);
   } catch (error) {

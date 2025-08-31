@@ -146,6 +146,18 @@ const Edit = () => {
 
   const handlePdfParsed = useCallback(
     (parsedData: ParsedInvoiceData, file: File) => {
+      // Check if the PDF contains any meaningful invoice data
+      const hasInvoiceData =
+        parsedData.invoiceNumber ||
+        parsedData.invoiceDate ||
+        (parsedData.lineItems && parsedData.lineItems.length > 0) ||
+        (parsedData.expenses && parsedData.expenses.length > 0);
+
+      if (!hasInvoiceData) {
+        setError("This PDF doesn't appear to contain invoice data. Please upload a valid invoice PDF.");
+        return;
+      }
+
       // Update invoice number
       if (parsedData.invoiceNumber) {
         setInvoiceNumber(parsedData.invoiceNumber);
