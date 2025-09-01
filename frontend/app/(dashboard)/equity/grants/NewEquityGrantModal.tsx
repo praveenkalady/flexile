@@ -232,7 +232,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
+      <DialogContent className="overflow-x-hidden overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-medium">New equity grant</DialogTitle>
           <DialogDescription>Fill in the details below to create an equity grant.</DialogDescription>
@@ -515,7 +515,10 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
                 className="flex h-auto w-full items-center justify-between p-0 text-left hover:bg-transparent"
                 onClick={() => setShowExercisePeriods(!showExercisePeriods)}
               >
-                <h2 className="text-lg font-medium">Customize post-termination exercise period</h2>
+                <h2 className="font-medium sm:text-lg">
+                  <span className="block sm:hidden">Post-termination exercise period</span>
+                  <span className="hidden sm:block">Customize post-termination exercise period</span>
+                </h2>
                 {showExercisePeriods ? <ChevronDown className="size-6" /> : <ChevronRight className="size-6" />}
               </Button>
 
