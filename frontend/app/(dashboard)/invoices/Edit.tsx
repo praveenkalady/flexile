@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpTrayIcon, PlusIcon } from "@heroicons/react/16/solid";
-import { PaperAirplaneIcon, PaperClipIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { DocumentArrowDownIcon, PaperAirplaneIcon, PaperClipIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { type DateValue, parseDate } from "@internationalized/date";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { List } from "immutable";
@@ -141,6 +141,7 @@ const Edit = () => {
   });
   const [showExpenses, setShowExpenses] = useState(false);
   const uploadExpenseRef = useRef<HTMLInputElement>(null);
+  const pdfImportRef = useRef<HTMLInputElement>(null);
   const [expenses, setExpenses] = useState(List<InvoiceFormExpense>(data.invoice.expenses));
   const showExpensesTable = showExpenses || expenses.size > 0;
 
@@ -254,7 +255,7 @@ const Edit = () => {
     [data.company.expense_categories, data.user.project_based, payRateInSubunits],
   );
 
-  const { isDragging, isParsing, error, setError } = usePdfDragAndDrop({
+  const { isDragging, isParsing, error, setError, handleFileSelect } = usePdfDragAndDrop({
     onPdfParsed: handlePdfParsed,
   });
 
@@ -377,6 +378,20 @@ const Edit = () => {
   return (
     <>
       <PdfDropOverlay isDragging={isDragging} isParsing={isParsing} />
+      <input
+        ref={pdfImportRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleFileSelect(file);
+            // Reset input value so the same file can be selected again
+            e.target.value = "";
+          }
+        }}
+      />
       <DashboardHeader
         title={data.invoice.id ? "Edit invoice" : "New invoice"}
         headerActions={
@@ -388,6 +403,15 @@ const Edit = () => {
                 <Link href="/invoices">Cancel</Link>
               </Button>
             )}
+            <Button
+              variant="outline"
+              onClick={() => pdfImportRef.current?.click()}
+              disabled={isParsing}
+              title="Import invoice data from a PDF file"
+            >
+              <DocumentArrowDownIcon className="size-4" />
+              {isParsing ? "Parsing..." : "Import from PDF"}
+            </Button>
             <Button variant="primary" onClick={() => validate() && submit.mutate()} disabled={submit.isPending}>
               <PaperAirplaneIcon className="size-4" />
               {submit.isPending ? "Sending..." : data.invoice.id ? "Re-submit invoice" : "Send invoice"}
