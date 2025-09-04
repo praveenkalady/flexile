@@ -60,8 +60,23 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
         });
 
         if (!response.ok) {
-          const { error } = await response.json().catch(() => ({ error: "Failed to parse PDF" }));
-          throw new Error(error);
+          let errorData: { error: string };
+          try {
+            const jsonResult: unknown = await response.json();
+            if (
+              typeof jsonResult === "object" &&
+              jsonResult !== null &&
+              "error" in jsonResult &&
+              typeof jsonResult.error === "string"
+            ) {
+              errorData = { error: jsonResult.error };
+            } else {
+              errorData = { error: "Failed to parse PDF" };
+            }
+          } catch {
+            errorData = { error: "Failed to parse PDF" };
+          }
+          throw new Error(errorData.error);
         }
 
         const data = parsedInvoiceSchema.parse(await response.json());
@@ -76,7 +91,7 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
   );
 
   const handleDrop = useCallback(
-    async (e: DragEvent) => {
+    (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -89,14 +104,14 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
         return;
       }
 
-      await processPdfFile(pdfFile);
+      void processPdfFile(pdfFile);
     },
     [processPdfFile],
   );
 
   const handleFileSelect = useCallback(
-    async (file: File) => {
-      await processPdfFile(file);
+    (file: File) => {
+      void processPdfFile(file);
     },
     [processPdfFile],
   );
