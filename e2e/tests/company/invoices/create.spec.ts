@@ -375,55 +375,52 @@ test.describe("invoice PDF import", () => {
 
   test("validates PDF file type and size", async ({ page }) => {
     await login(page, contractorUser, "/invoices/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
-    const dropTarget = page.locator("body");
+    // Verify Import from PDF button exists
+    const importButton = page.getByRole("button", { name: "Import from PDF" });
+    await expect(importButton).toBeVisible();
 
-    // Test non-PDF file
-    const txtTransfer = await createDataTransferHandle(page, [
-      {
-        name: "document.txt",
-        type: "text/plain",
-        bytes: Array.from(Buffer.from("Text file")),
-      },
-    ]);
+    // Click to trigger file input
+    await importButton.click();
 
-    await dropTarget.dispatchEvent("drop", { dataTransfer: txtTransfer });
-    await page.waitForTimeout(1000);
+    // Get the file input (it should be present after clicking)
+    const fileInput = page.locator('input[type="file"][accept="application/pdf"]');
+    await expect(fileInput).toBeAttached();
 
-    // Check for error message with more specific selectors
-    const errorAlert = page.locator('[role="alert"]');
-    const dropError = page.getByText("Please drop a PDF file");
-    const selectError = page.getByText("Please select a PDF file");
-    const genericPdfError = page.getByText(/PDF file/iu);
+    // Test 1: Non-PDF file validation
+    await fileInput.setInputFiles({
+      name: "document.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("This is not a PDF file"),
+    });
 
-    // Wait for any error to appear
-    try {
-      await expect(errorAlert.or(dropError).or(selectError).or(genericPdfError)).toBeVisible({ timeout: 3000 });
-    } catch {
-      // If no specific error found, check for any visible error message
-      const anyError = page.locator('[role="alert"], .alert, .error').first();
-      await expect(anyError).toBeVisible({ timeout: 2000 });
-    }
+    // Expect error message
+    const errorMessage = page.getByText(/Please select a PDF file/u);
+    await expect(errorMessage).toBeVisible({ timeout: 5000 });
 
-    // Dismiss error if visible
-    const dismissButton = page.getByRole("button", { name: "Dismiss" });
-    if (await dismissButton.isVisible().catch(() => false)) {
-      await dismissButton.click();
-    }
-
-    // Test oversized PDF (>10MB)
-    const largeTransfer = await createDataTransferHandle(page, [
-      {
-        name: "large.pdf",
-        type: "application/pdf",
-        bytes: Array.from(Buffer.alloc(11 * 1024 * 1024)), // 11MB
-      },
-    ]);
-
-    await dropTarget.dispatchEvent("drop", { dataTransfer: largeTransfer });
-    await expect(page.getByText(/File size exceeds.*10.*MB limit/u)).toBeVisible();
+    // Dismiss error
     await page.getByRole("button", { name: "Dismiss" }).click();
+    await expect(errorMessage).not.toBeVisible();
+
+    // Test 2: Oversized PDF file validation
+    await importButton.click();
+
+    // Create a large file (12MB)
+    const largeBuffer = Buffer.alloc(12 * 1024 * 1024, 0);
+    await fileInput.setInputFiles({
+      name: "large.pdf",
+      mimeType: "application/pdf",
+      buffer: largeBuffer,
+    });
+
+    // Expect size error
+    const sizeError = page.getByText(/File size exceeds.*10.*MB limit/u);
+    await expect(sizeError).toBeVisible({ timeout: 5000 });
+
+    // Dismiss error
+    await page.getByRole("button", { name: "Dismiss" }).click();
+    await expect(sizeError).not.toBeVisible();
   });
 
   test("shows error for non-invoice PDF content", async ({ page }) => {
