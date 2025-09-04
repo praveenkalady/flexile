@@ -6,7 +6,7 @@ import { equityGrantsFactory } from "@test/factories/equityGrants";
 import { usersFactory } from "@test/factories/users";
 import { fillDatePicker } from "@test/helpers";
 import { login } from "@test/helpers/auth";
-import { expect, type Page, test } from "@test/index";
+import { expect, test } from "@test/index";
 import { subDays } from "date-fns";
 import { desc, eq } from "drizzle-orm";
 import {
@@ -283,17 +283,6 @@ test.describe("invoice PDF import", () => {
   let company: typeof companies.$inferSelect;
   let contractorUser: typeof users.$inferSelect;
 
-  async function createDataTransferHandle(page: Page, files: { name: string; type: string; bytes: number[] }[]) {
-    return page.evaluateHandle((files) => {
-      const dt = new DataTransfer();
-      files.forEach(({ name, type, bytes }) => {
-        const file = new File([new Uint8Array(bytes)], name, { type });
-        dt.items.add(file);
-      });
-      return dt;
-    }, files);
-  }
-
   test.beforeEach(async () => {
     company = (
       await companiesFactory.createCompletedOnboarding({
@@ -317,6 +306,7 @@ test.describe("invoice PDF import", () => {
 
   test("shows Import from PDF button and successfully parses invoice", async ({ page }) => {
     await login(page, contractorUser, "/invoices/new");
+    await page.waitForLoadState("domcontentloaded");
 
     // Check that Import from PDF button is visible
     const importButton = page.getByRole("button", { name: "Import from PDF" });
@@ -342,17 +332,19 @@ test.describe("invoice PDF import", () => {
       });
     });
 
-    // Simulate PDF drop
-    const dropTarget = page.locator("body");
-    const dataTransfer = await createDataTransferHandle(page, [
-      {
-        name: "invoice.pdf",
-        type: "application/pdf",
-        bytes: Array.from(Buffer.from("Invoice content")),
-      },
-    ]);
+    // Click import button to trigger file input
+    await importButton.click();
 
-    await dropTarget.dispatchEvent("drop", { dataTransfer });
+    // Upload PDF file using file input
+    const fileInput = page.locator('input[type="file"][accept="application/pdf"]');
+    await fileInput.setInputFiles({
+      name: "invoice.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("Mock PDF invoice content"),
+    });
+
+    // Wait for API response and processing
+    await page.waitForResponse("**/api/invoices/parse-pdf");
     await page.waitForTimeout(1000);
 
     // Verify fields are populated
@@ -425,7 +417,7 @@ test.describe("invoice PDF import", () => {
 
   test("shows error for non-invoice PDF content", async ({ page }) => {
     await login(page, contractorUser, "/invoices/new");
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
 
     // Mock API response for non-invoice PDF
     await page.route("**/api/invoices/parse-pdf", async (route) => {
@@ -438,32 +430,41 @@ test.describe("invoice PDF import", () => {
       });
     });
 
-    const dropTarget = page.locator("body");
-    const dataTransfer = await createDataTransferHandle(page, [
-      {
-        name: "manual.pdf",
-        type: "application/pdf",
-        bytes: Array.from(Buffer.from("User manual")),
-      },
-    ]);
+    // Use the file input approach for more reliability
+    const importButton = page.getByRole("button", { name: "Import from PDF" });
+    await expect(importButton).toBeVisible();
+    await importButton.click();
 
-    await dropTarget.dispatchEvent("drop", { dataTransfer });
-    await page.waitForTimeout(1000);
+    // Get file input and upload a PDF that will trigger the mocked error
+    const fileInput = page.locator('input[type="file"][accept="application/pdf"]');
+    await fileInput.setInputFiles({
+      name: "manual.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("This is a user manual, not an invoice"),
+    });
 
-    // Check for error message
-    const errorAlert = page.locator('[role="alert"]').filter({ hasText: "invoice data" });
-    const errorText = page.getByText(
+    // Wait for the API call and error to appear
+    await page.waitForResponse("**/api/invoices/parse-pdf");
+
+    // Check for the specific error message with multiple fallbacks
+    const specificError = page.getByText(
       "This PDF doesn't appear to contain invoice data. Please upload a valid invoice PDF.",
     );
+    const alertError = page.locator('[role="alert"]').filter({ hasText: "invoice data" });
+    const anyInvoiceDataError = page.getByText(/invoice data/u);
 
+    // Try the most specific first, then fallback to more generic
     try {
-      await expect(errorAlert.or(errorText)).toBeVisible({ timeout: 5000 });
+      await expect(specificError).toBeVisible({ timeout: 3000 });
     } catch {
-      const anyError = page.getByText(/invoice data/iu);
-      await expect(anyError).toBeVisible();
+      try {
+        await expect(alertError).toBeVisible({ timeout: 2000 });
+      } catch {
+        await expect(anyInvoiceDataError).toBeVisible({ timeout: 2000 });
+      }
     }
 
-    // Dismiss error if exists
+    // Dismiss error if it exists
     const dismissButton = page.getByRole("button", { name: "Dismiss" });
     if (await dismissButton.isVisible().catch(() => false)) {
       await dismissButton.click();
