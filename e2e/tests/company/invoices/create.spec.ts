@@ -282,7 +282,6 @@ test.describe("invoice creation", () => {
 test.describe("invoice PDF import", () => {
   let company: typeof companies.$inferSelect;
   let contractorUser: typeof users.$inferSelect;
-  let _companyContractor: typeof companyContractors.$inferSelect;
 
   async function createDataTransferHandle(page: Page, files: { name: string; type: string; bytes: number[] }[]) {
     return page.evaluateHandle((files) => {
@@ -309,13 +308,11 @@ test.describe("invoice PDF import", () => {
       })
     ).user;
 
-    _companyContractor = (
-      await companyContractorsFactory.create({
-        companyId: company.id,
-        userId: contractorUser.id,
-        payRateInSubunits: 10000, // $100/hour
-      })
-    ).companyContractor;
+    await companyContractorsFactory.create({
+      companyId: company.id,
+      userId: contractorUser.id,
+      payRateInSubunits: 10000, // $100/hour
+    });
   });
 
   test("shows Import from PDF button and successfully parses invoice", async ({ page }) => {
