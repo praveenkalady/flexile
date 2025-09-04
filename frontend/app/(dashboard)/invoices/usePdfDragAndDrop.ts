@@ -98,7 +98,13 @@ export function usePdfDragAndDrop({ onPdfParsed }: { onPdfParsed: (data: ParsedI
       setIsDragging(false);
       dragCounter.current = 0;
 
-      const pdfFile = Array.from(e.dataTransfer?.files ?? []).find((f) => f.type === "application/pdf");
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length === 0) {
+        setError("Please drop a PDF file");
+        return;
+      }
+
+      const pdfFile = files.find((f) => f.type === "application/pdf");
       if (!pdfFile) {
         setError("Please drop a PDF file");
         return;

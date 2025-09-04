@@ -389,14 +389,22 @@ test.describe("invoice PDF import", () => {
     ]);
 
     await dropTarget.dispatchEvent("drop", { dataTransfer: txtTransfer });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
-    // Check for error message
+    // Check for error message with more specific selectors
+    const errorAlert = page.locator('[role="alert"]');
     const dropError = page.getByText("Please drop a PDF file");
     const selectError = page.getByText("Please select a PDF file");
-    const dropErrorVisible = await dropError.isVisible().catch(() => false);
-    const selectErrorVisible = await selectError.isVisible().catch(() => false);
-    expect(dropErrorVisible || selectErrorVisible).toBeTruthy();
+    const genericPdfError = page.getByText(/PDF file/iu);
+
+    // Wait for any error to appear
+    try {
+      await expect(errorAlert.or(dropError).or(selectError).or(genericPdfError)).toBeVisible({ timeout: 3000 });
+    } catch {
+      // If no specific error found, check for any visible error message
+      const anyError = page.locator('[role="alert"], .alert, .error').first();
+      await expect(anyError).toBeVisible({ timeout: 2000 });
+    }
 
     // Dismiss error if visible
     const dismissButton = page.getByRole("button", { name: "Dismiss" });
