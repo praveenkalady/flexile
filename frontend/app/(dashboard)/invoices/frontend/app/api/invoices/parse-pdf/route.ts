@@ -4,6 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { PDF_MAX_FILE_SIZE, PDF_MAX_FILE_SIZE_MB } from "@/models/constants";
 
+// Safe wrapper for AI SDK calls to handle type safety issues
+interface AIProcessingResult {
+  success: boolean;
+  data?: z.infer<typeof invoiceSchema>;
+  error?: string;
+}
+
 const invoiceSchema = z.object({
   invoiceNumber: z.string().optional(),
   invoiceDate: z.string().optional(),
@@ -29,33 +36,17 @@ const invoiceSchema = z.object({
   notes: z.string().optional(),
 });
 
-export async function POST(request: NextRequest) {
+/**
+ * Safely process PDF with AI SDK
+ */
+async function processWithAI(dataUrl: string): Promise<AIProcessingResult> {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
+    // AI SDK operations are isolated here
 
-    if (!file || !(file instanceof File) || !file.type.includes("pdf")) {
-      return NextResponse.json({ error: "Please provide a valid PDF file" }, { status: 400 });
-    }
+    const modelInstance = openai("gpt-4o");
 
-    // Check file size
-    if (file.size > PDF_MAX_FILE_SIZE) {
-      return NextResponse.json(
-        { error: `File size exceeds ${PDF_MAX_FILE_SIZE_MB}MB limit. Please upload a smaller PDF.` },
-        { status: 400 },
-      );
-    }
-
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
-    }
-
-    // Convert PDF to base64
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const dataUrl = `data:application/pdf;base64,${buffer.toString("base64")}`;
-
-    const { object } = await generateObject({
-      model: openai("gpt-4o"),
+    const generation = await generateObject({
+      model: modelInstance,
       schema: invoiceSchema,
       messages: [
         {
@@ -82,12 +73,62 @@ export async function POST(request: NextRequest) {
       temperature: 0.1,
     });
 
+    // Validate the response with our schema
+
+    const validatedObject = invoiceSchema.parse(generation.object);
+
+    return {
+      success: true,
+      data: validatedObject,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to process PDF with AI",
+    };
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+
+    if (!file || !(file instanceof File) || !file.type.includes("pdf")) {
+      return NextResponse.json({ error: "Please provide a valid PDF file" }, { status: 400 });
+    }
+
+    // Check file size
+    if (file.size > PDF_MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File size exceeds ${PDF_MAX_FILE_SIZE_MB}MB limit. Please upload a smaller PDF.` },
+        { status: 400 },
+      );
+    }
+
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
+    }
+
+    // Convert PDF to base64
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const dataUrl = `data:application/pdf;base64,${buffer.toString("base64")}`;
+
+    // Process PDF with AI SDK using our safe wrapper
+    const aiResult = await processWithAI(dataUrl);
+
+    if (!aiResult.success || !aiResult.data) {
+      throw new Error(aiResult.error || "Failed to process PDF with AI");
+    }
+
+    const object = aiResult.data;
+
     // Check if the result contains any meaningful invoice data
     const hasData =
-      object.invoiceNumber ||
-      object.invoiceDate ||
-      (object.lineItems && object.lineItems.length > 0) ||
-      (object.expenses && object.expenses.length > 0);
+      Boolean(object.invoiceNumber) ||
+      Boolean(object.invoiceDate) ||
+      Boolean(object.lineItems && object.lineItems.length > 0) ||
+      Boolean(object.expenses && object.expenses.length > 0);
 
     if (!hasData) {
       return NextResponse.json(

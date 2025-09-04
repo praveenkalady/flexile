@@ -202,11 +202,11 @@ const Edit = () => {
           } else if (item.amount && item.quantity && item.quantity > 0) {
             rateInSubunits = Math.round((item.amount / item.quantity) * 100);
           } else {
-            rateInSubunits = payRateInSubunits ?? 10000;
+            rateInSubunits = payRateInSubunits || 10000;
           }
 
           return {
-            description: item.description ?? "",
+            description: item.description || "",
             quantity: quantityValue,
             hourly: isHourly,
             pay_rate_in_subunits: rateInSubunits,
@@ -222,15 +222,15 @@ const Edit = () => {
           const newExpenses = parsedData.expenses.map((expense) => {
             // Match category by name if provided
             const categoryId = expense.category
-              ? (data.company.expense_categories.find((cat) =>
+              ? data.company.expense_categories.find((cat) =>
                   cat.name.toLowerCase().includes(expense.category.toLowerCase()),
-                )?.id ?? defaultCategory.id)
+                )?.id || defaultCategory.id
               : defaultCategory.id;
 
             return {
-              description: expense.description ?? "",
+              description: expense.description || "",
               category_id: categoryId,
-              total_amount_in_cents: Math.round((expense.amount ?? 0) * 100),
+              total_amount_in_cents: Math.round((expense.amount || 0) * 100),
               attachment: { name: file.name, url: URL.createObjectURL(file) },
               blob: file,
             };
