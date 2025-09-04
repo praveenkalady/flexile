@@ -232,7 +232,7 @@ export default function NewEquityGrantModal({ open, onOpenChange }: NewEquityGra
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="overflow-x-hidden overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-medium">New equity grant</DialogTitle>
           <DialogDescription>Fill in the details below to create an equity grant.</DialogDescription>
