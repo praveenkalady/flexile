@@ -223,7 +223,7 @@ const Edit = () => {
             // Match category by name if provided
             const categoryId = expense.category
               ? data.company.expense_categories.find((cat) =>
-                  cat.name.toLowerCase().includes(expense.category.toLowerCase()),
+                  cat.name.toLowerCase().includes(expense.category?.toLowerCase() ?? ""),
                 )?.id || defaultCategory.id
               : defaultCategory.id;
 
